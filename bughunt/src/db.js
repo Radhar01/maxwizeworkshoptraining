@@ -50,14 +50,22 @@ function all() {
   return query('SELECT * FROM expenses');
 }
 
+// `name` is compared as a value, never pasted into a query string.
 function findCategory(name) {
-  return query(`SELECT * FROM categories WHERE name = '${name}'`)[0] || null;
+  stats.queries += 1;
+  return tables.categories.find((c) => c.name === name) || null;
+}
+
+// All categories keyed by name, in a single query (avoids per-row lookups).
+function categoriesByName() {
+  stats.queries += 1;
+  return new Map(tables.categories.map((c) => [c.name, c]));
 }
 
 // Hot-reload the data file without restarting (used by POST /admin/reload).
 function reload(file = DATA_FILE) {
-  tables.expenses = fs.readJsonSync(file);
+  tables.expenses = JSON.parse(fs.readFileSync(file, 'utf8'));
   return tables.expenses.length;
 }
 
-module.exports = { query, all, findCategory, reload, stats };
+module.exports = { query, all, findCategory, categoriesByName, reload, stats };

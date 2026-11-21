@@ -18,7 +18,7 @@ function isValidMonth(s) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', version: require('../package.json').version });
 });
 
 // GET /expenses?from=YYYY-MM-DD&to=YYYY-MM-DD&category=food  (all optional, range inclusive)
@@ -64,6 +64,46 @@ app.post('/expenses', (req, res) => {
     note: typeof body.note === 'string' ? body.note : '',
   });
   res.status(201).json(row);
+});
+
+// GET /expenses/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD  (both required, range inclusive)
+
+// Validates the query and returns { ranges } or { error }. Only from/to today;
+// a later change can add ?dates= and ?range= here without touching the rest.
+function parseRanges(query) {
+  const { from, to } = query;
+  if (!isValidDate(from)) return { error: 'from must be YYYY-MM-DD' };
+  if (!isValidDate(to)) return { error: 'to must be YYYY-MM-DD' };
+  if (from > to) return { error: 'from must not be after to' };
+  return { ranges: [{ from, to }] };
+}
+
+function filterRows(rows, ranges) {
+  return rows
+    .filter((r) => ranges.some(({ from, to }) => r.date >= from && r.date <= to))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+function csvField(value) {
+  const s = value == null ? '' : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function toCsv(rows) {
+  const lines = ['date,category,amount,note'];
+  for (const r of rows) lines.push([r.date, r.category, r.amount, csvField(r.note)].join(','));
+  return lines.join('\n') + '\n';
+}
+
+app.get('/expenses/export.csv', (req, res) => {
+  const { ranges, error } = parseRanges(req.query);
+  if (error) return res.status(400).json({ error });
+  const { from, to } = ranges[0];
+  res.set({
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': `attachment; filename="expenses-${from}-${to}.csv"`,
+  });
+  res.send(toCsv(filterRows(store.readAll(), ranges)));
 });
 
 // --- routes end ---
